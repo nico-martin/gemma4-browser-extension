@@ -15,7 +15,7 @@ export interface Command {
 }
 
 export interface ChatCommandsRef {
-  handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
+  handleKeyDown: (e: KeyboardEvent<HTMLElement>) => void;
 }
 
 interface ChatCommandsProps {
@@ -39,7 +39,7 @@ const ChatCommands = forwardRef<ChatCommandsRef, ChatCommandsProps>(
     }, [inputValue]);
 
     useImperativeHandle(ref, () => ({
-      handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => {
+      handleKeyDown: (e: KeyboardEvent<HTMLElement>) => {
         if (!isOpen || filteredCommands.length === 0) return;
 
         switch (e.key) {
