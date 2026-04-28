@@ -17,6 +17,7 @@ import {
 import cn from "../utils/classnames.ts";
 import ChatCommands, { ChatCommandsRef, Command } from "./ChatCommands.tsx";
 import ChatToolsModal from "./ChatToolsModal.tsx";
+import CopyButton from "./CopyButton.tsx";
 import MessageContent from "./MessageContent.tsx";
 
 const MAX_INPUT_HEIGHT_PX = 200;
@@ -195,30 +196,40 @@ export default function Chat() {
             </p>
           </div>
         ) : (
-          messages.map((message, index) => (
-            <div
-              key={index}
-              className={cn(
-                "max-w-[85%] rounded-md px-4 py-3",
-                message.role === "user"
-                  ? "ml-auto bg-chrome-accent-primary text-chrome-bg-primary"
-                  : "bg-chrome-bg-secondary"
-              )}
-            >
-              <div className="text-sm">
-                {message.role === "user" ? (
-                  message.content
-                ) : (
-                  <MessageContent
-                    content={message.content}
-                    tools={message.tools}
-                    metrics={message.metrics}
-                    onPermissionDecision={onPermissionDecision}
-                  />
-                )}
+          messages.map((message, index) => {
+            const anchor = `--msg-${index}`;
+            return (
+              <div key={index} className="message-row relative">
+                <div
+                  className={cn(
+                    "message-bubble max-w-[85%] px-4 py-3",
+                    message.role === "user"
+                      ? "user-message ml-auto bg-chrome-accent-primary text-chrome-bg-primary"
+                      : "bg-chrome-bg-secondary"
+                  )}
+                  style={{ anchorName: anchor } as React.CSSProperties}
+                >
+                  <div className="text-sm">
+                    {message.role === "user" ? (
+                      message.content
+                    ) : (
+                      <MessageContent
+                        content={message.content}
+                        tools={message.tools}
+                        metrics={message.metrics}
+                        onPermissionDecision={onPermissionDecision}
+                      />
+                    )}
+                  </div>
+                </div>
+                <CopyButton
+                  text={message.content}
+                  align={message.role === "user" ? "left" : "right"}
+                  anchor={anchor}
+                />
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
