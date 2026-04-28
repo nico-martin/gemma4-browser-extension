@@ -12,6 +12,8 @@ export enum BackgroundTasks {
   AGENT_GENERATE_TEXT,
   AGENT_GET_MESSAGES,
   AGENT_CLEAR,
+  AGENT_CANCEL,
+  TOOL_PERMISSION_RESPOND,
 }
 
 export enum BackgroundMessages {
@@ -33,11 +35,24 @@ export interface ChatMessageUser {
   content: string;
 }
 
+export type ToolStatus =
+  | "pending_permission"
+  | "running"
+  | "completed"
+  | "denied";
+
+export type ToolPermissionDecision = "allow_once" | "always_allow" | "deny";
+
+export type ToolPermissionGrant = "always_allow";
+
+export type ToolPermissions = Partial<Record<string, ToolPermissionGrant>>;
+
 export interface ChatMessageTool {
   name: string;
   functionSignature: string;
   id: string;
   result: string;
+  status: ToolStatus;
 }
 
 export interface AgentMetrics {

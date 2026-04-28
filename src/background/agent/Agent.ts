@@ -1,5 +1,6 @@
 import {
   DynamicCache,
+  InterruptableStoppingCriteria,
   TextGenerationPipeline,
   TextStreamer,
   pipeline,
@@ -10,6 +11,9 @@ import {
   AgentMetrics,
   ChatMessage,
   ChatMessageAssistant,
+  ToolPermissionDecision,
+  ToolPermissions,
+  ToolStatus,
 } from "../../shared/types.ts";
 import { extractToolCalls } from "./extractToolCalls.ts";
 import { ToolCallPayload } from "./types.ts";
@@ -29,20 +33,63 @@ type GenerationMetrics = AgentMetrics;
 export type AgentRunMetrics = AgentMetrics;
 
 let pipe: TextGenerationPipeline | null = null;
-const SYSTEM_PROMPT =
-  "You are a helpful assistant with access to external tools declared in this conversation. " +
-  "Never claim you do not have tools when tool declarations are present. " +
-  "When asked what tools you have, list the declared tool names exactly. " +
-  "If you decide to use a tool, briefly explain what you are doing before calling it.";
+const SYSTEM_PROMPT_BASE =
+  "You are a helpful assistant running inside a browser extension. " +
+  "You can interact with the user's browser via the tools declared in this conversation — never claim you have no tools when declarations are present. " +
+  "When the user says 'this page', 'the page', 'this site', 'this tab', 'this article', or anything similar without giving a URL, they mean their currently active tab. " +
+  "Do not ask the user for a URL in that case. Call the ask_website tool to read content from the active tab. " +
+  "Each tool call requires the user's approval — they will be prompted, so call tools confidently when they help fulfil the request. " +
+  "If you decide to use a tool, briefly say what you are about to do before calling it.";
+
+const buildSystemPrompt = (activeTab?: {
+  title?: string;
+  url?: string;
+}): string => {
+  if (!activeTab?.url) return SYSTEM_PROMPT_BASE;
+  const title = activeTab.title || "(untitled)";
+  return (
+    SYSTEM_PROMPT_BASE +
+    `\n\nThe user's currently active browser tab:\n- Title: ${title}\n- URL: ${activeTab.url}`
+  );
+};
+
+const getActiveTabInfo = async (): Promise<
+  { title?: string; url?: string } | undefined
+> => {
+  try {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      lastFocusedWindow: true,
+    });
+    if (!tab?.url?.startsWith("http")) return undefined;
+    return { title: tab.title, url: tab.url };
+  } catch {
+    return undefined;
+  }
+};
+
 const createInitialMessages = (): Array<Message> => [
   {
     role: "system",
-    content: SYSTEM_PROMPT,
+    content: SYSTEM_PROMPT_BASE,
   },
 ];
 const END_OF_TEXT_TOKEN_REGEX = /<\|end_of_text\|>/g;
 const sanitizeModelText = (text: string) =>
   text.replace(END_OF_TEXT_TOKEN_REGEX, "").trim();
+
+const PERMISSIONS_STORAGE_KEY = "toolPermissions";
+
+const loadToolPermissions = async (): Promise<ToolPermissions> => {
+  const result = await chrome.storage.local.get(PERMISSIONS_STORAGE_KEY);
+  return (result[PERMISSIONS_STORAGE_KEY] as ToolPermissions) || {};
+};
+
+const saveToolPermissionAlways = async (toolName: string) => {
+  const permissions = await loadToolPermissions();
+  permissions[toolName] = "always_allow";
+  await chrome.storage.local.set({ [PERMISSIONS_STORAGE_KEY]: permissions });
+};
 
 const getTextGenerationPipeline = async (
   onDownloadProgress: (id: string, percentage: number) => void = () => {}
@@ -76,8 +123,36 @@ class Agent {
     (chatMessages: Array<ChatMessage>) => void
   > = [];
   private tools: Array<WebMCPTool> = [];
+  private stoppingCriteria = new InterruptableStoppingCriteria();
+  private pendingPermissions = new Map<
+    string,
+    (decision: ToolPermissionDecision) => void
+  >();
 
   constructor() {}
+
+  public cancel = () => {
+    this.stoppingCriteria.interrupt();
+    for (const resolve of this.pendingPermissions.values()) resolve("deny");
+    this.pendingPermissions.clear();
+  };
+
+  public resolvePermission = (
+    toolCallId: string,
+    decision: ToolPermissionDecision
+  ) => {
+    const resolve = this.pendingPermissions.get(toolCallId);
+    if (!resolve) return;
+    this.pendingPermissions.delete(toolCallId);
+    resolve(decision);
+  };
+
+  private requestPermission = (
+    toolCallId: string
+  ): Promise<ToolPermissionDecision> =>
+    new Promise((resolve) => {
+      this.pendingPermissions.set(toolCallId, resolve);
+    });
 
   get chatMessages() {
     return this._chatMessages;
@@ -153,6 +228,7 @@ class Agent {
       max_new_tokens: 1024,
       do_sample: false,
       streamer,
+      stopping_criteria: this.stoppingCriteria,
     });
 
     const promptLength = Number(input.input_ids.dims.at(-1) ?? 0);
@@ -233,6 +309,25 @@ class Agent {
   };
 
   public runAgent = async (prompt: string): Promise<AgentRunMetrics> => {
+    this.stoppingCriteria.reset();
+    const activeTab = await getActiveTabInfo();
+    const systemContent = buildSystemPrompt(activeTab);
+    const systemIdx = this.messages.findIndex((m) => m.role === "system");
+    const previousSystemContent =
+      systemIdx >= 0 ? this.messages[systemIdx].content : null;
+    if (systemIdx >= 0) {
+      this.messages[systemIdx] = {
+        ...this.messages[systemIdx],
+        content: systemContent,
+      };
+    } else {
+      this.messages = [{ role: "system", content: systemContent }, ...this.messages];
+    }
+    if (previousSystemContent !== systemContent) {
+      // System prompt changed — KV cache prefix is no longer valid.
+      void this.pastKeyValues?.dispose();
+      this.pastKeyValues = null;
+    }
     let roleForGeneration: "user" | "tool" = "user";
     let appendPromptMessage = true;
     const start = performance.now();
@@ -246,6 +341,7 @@ class Agent {
       { role: "user", content: prompt },
     ];
     const prevChatMessages = this.chatMessages;
+
     const assistantMessage: ChatMessageAssistant = {
       role: "assistant",
       content: "",
@@ -264,6 +360,7 @@ class Agent {
 
     this.chatMessages = [...prevChatMessages, assistantMessage];
 
+    try {
     let messageInThisAgentRun = "";
     const updateAssistantMessage = (response: string) => {
       const { toolCalls, message } = extractToolCalls(response);
@@ -279,6 +376,7 @@ class Agent {
               )})`,
               id: tool.id,
               result: "",
+              status: "pending_permission",
             },
           ];
         }
@@ -318,11 +416,17 @@ class Agent {
       const { toolCalls, message } = extractToolCalls(finalResponse);
       messageInThisAgentRun = message;
 
-      if (toolCalls.length === 0) {
+      if (this.stoppingCriteria.interrupted || toolCalls.length === 0) {
         prompt = null;
       } else {
+        const updateToolStatus = (id: string, status: ToolStatus) => {
+          assistantMessage.tools = assistantMessage.tools.map((tool) =>
+            tool.id === id ? { ...tool, status } : tool
+          );
+          this.chatMessages = [...prevChatMessages, assistantMessage];
+        };
         const toolResponses = await Promise.all(
-          toolCalls.map(this.executeToolCall)
+          toolCalls.map((call) => this.executeToolCall(call, updateToolStatus))
         );
 
         for (let i = this.messages.length - 1; i >= 0; i -= 1) {
@@ -362,12 +466,12 @@ class Agent {
           })),
         ];
 
-        assistantMessage.tools = assistantMessage.tools.map((tool) => ({
-          ...tool,
-          result:
-            toolResponses.find(({ id }) => id === tool.id)?.result ||
-            tool.result,
-        }));
+        assistantMessage.tools = assistantMessage.tools.map((tool) => {
+          const response = toolResponses.find(({ id }) => id === tool.id);
+          return response
+            ? { ...tool, result: response.result || tool.result }
+            : tool;
+        });
 
         this.chatMessages = [...prevChatMessages, assistantMessage];
         prompt =
@@ -401,19 +505,52 @@ class Agent {
       tokensPerSecond: decodeMs > 0 ? generatedTokens / (decodeMs / 1000) : 0,
       msPerToken: generatedTokens > 0 ? decodeMs / generatedTokens : 0,
     };
+    } finally {
+      if (this.stoppingCriteria.interrupted) {
+        // KV cache was mid-write when interrupted; reusing it corrupts the next run.
+        void this.pastKeyValues?.dispose();
+        this.pastKeyValues = null;
+      }
+    }
   };
 
   private executeToolCall = async (
-    toolCall: ToolCallPayload
+    toolCall: ToolCallPayload,
+    updateStatus: (id: string, status: ToolStatus) => void
   ): Promise<{ id: string; name: string; result: string }> => {
     const toolToUse = this.tools.find((t) => t.name === toolCall.name);
     if (!toolToUse)
       throw new Error(`Tool '${toolCall.name}' not found or is disabled.`);
 
+    const permissions = await loadToolPermissions();
+    let decision: ToolPermissionDecision;
+    if (permissions[toolCall.name] === "always_allow") {
+      decision = "allow_once";
+    } else {
+      updateStatus(toolCall.id, "pending_permission");
+      decision = await this.requestPermission(toolCall.id);
+      if (decision === "always_allow") {
+        await saveToolPermissionAlways(toolCall.name);
+      }
+    }
+
+    if (decision === "deny") {
+      updateStatus(toolCall.id, "denied");
+      return {
+        id: toolCall.id,
+        name: toolCall.name,
+        result:
+          "The user denied permission to run this tool. Do not retry it; if needed, ask the user how to proceed without it.",
+      };
+    }
+
+    updateStatus(toolCall.id, "running");
+    const result = await executeWebMCPTool(toolToUse, toolCall.arguments);
+    updateStatus(toolCall.id, "completed");
     return {
       id: toolCall.id,
       name: toolCall.name,
-      result: await executeWebMCPTool(toolToUse, toolCall.arguments),
+      result,
     };
   };
 
