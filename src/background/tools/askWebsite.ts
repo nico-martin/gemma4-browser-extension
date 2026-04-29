@@ -91,13 +91,27 @@ class WebsiteContentManager {
       tabId = tab.id;
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    let response: { parts: Array<WebsitePart> } | null = null;
+    const maxRetries = 5;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, 200 * Math.pow(2, attempt))
+      );
+      try {
+        response = await chrome.tabs.sendMessage(tabId, {
+          type: ContentTasks.EXTRACT_PAGE_DATA,
+        });
+        break;
+      } catch {
+        if (attempt === maxRetries - 1) {
+          throw new Error(
+            "Could not connect to page content script after multiple retries"
+          );
+        }
+      }
+    }
 
-    const response = await chrome.tabs.sendMessage(tabId, {
-      type: ContentTasks.EXTRACT_PAGE_DATA,
-    });
-
-    const parts = response.parts as Array<WebsitePart>;
+    const parts = response!.parts as Array<WebsitePart>;
 
     await Promise.all(
       parts.map(async (part, i) => {
