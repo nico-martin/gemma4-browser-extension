@@ -221,13 +221,24 @@ export const createAskWebsiteTool = (
           return "No relevant content found on the current page.";
         }
 
-        let response = `Found ${results.length} relevant content piece(s):\n\n`;
-        results.forEach((part, index) => {
-          response += `[${index + 1}] ID: ${part.id} | ${part.tagName.toUpperCase()} (Section ${part.sectionId}, Part ${part.paragraphId}):\n`;
-          response += `${part.content}\n\n`;
-        });
+        const MAX_CONTENT_PER_PART = 500;
+        const MAX_RESPONSE = 2000;
 
-        response += `\nNote: You can highlight any of these content pieces by using the highlight_website_element tool with the corresponding ID.`;
+        let response = `Found ${results.length} relevant content piece(s):\n\n`;
+        for (let index = 0; index < results.length; index++) {
+          const part = results[index];
+          const content =
+            part.content.length > MAX_CONTENT_PER_PART
+              ? part.content.slice(0, MAX_CONTENT_PER_PART) + "…"
+              : part.content;
+          response += `[${index + 1}] ID: ${part.id} | ${part.tagName.toUpperCase()}:\n${content}\n\n`;
+          if (response.length > MAX_RESPONSE) {
+            response += `(truncated, ${results.length - index - 1} more results omitted)`;
+            break;
+          }
+        }
+
+        response += `\nUse highlight_website_element with the ID to highlight a section.`;
 
         return response;
       } catch (error) {
