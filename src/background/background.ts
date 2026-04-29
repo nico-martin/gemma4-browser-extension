@@ -7,7 +7,10 @@ import {
   BackgroundTasks,
   ResponseStatus,
 } from "../shared/types.ts";
-import Agent from "./agent/Agent.ts";
+import Agent, {
+  getCurrentTextGenId,
+  switchTextGenModel,
+} from "./agent/Agent.ts";
 import {
   createAskWebsiteTool,
   highlightWebsiteElementTool,
@@ -182,6 +185,35 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const agent = getAgent();
     agent.clear();
     sendResponse({ status: ResponseStatus.SUCCESS });
+    return true;
+  }
+
+  if (message.type === BackgroundTasks.GET_CURRENT_MODEL) {
+    sendResponse({
+      status: ResponseStatus.SUCCESS,
+      modelKey: getCurrentTextGenId(),
+    });
+    return true;
+  }
+
+  if (message.type === BackgroundTasks.SWITCH_MODEL) {
+    const modelKey = message.modelKey as string;
+    switchTextGenModel(modelKey)
+      .then(() => {
+        // Clear agent and re-create with new model
+        if (currentAgent) {
+          currentAgent.clear();
+        }
+        currentAgent = null;
+        sendResponse({
+          status: ResponseStatus.SUCCESS,
+          modelKey,
+        });
+      })
+      .catch((error: Error) => {
+        console.error("SWITCH_MODEL failed:", error);
+        sendResponse({ status: ResponseStatus.ERROR, error: error.message });
+      });
     return true;
   }
 

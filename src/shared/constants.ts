@@ -44,8 +44,15 @@ export const MODELS: Record<
   },
 };
 
-export const TEXT_GENERATION_ID = "gemma4E2B";
+// Default text generation model — can be overridden via UI settings
+export const DEFAULT_TEXT_GENERATION_ID = "gemma4E2B";
+export const TEXT_GENERATION_ID = DEFAULT_TEXT_GENERATION_ID;
 export const FEATURE_EXTRACTION_ID = "allMiniLM";
+
+// User-selectable text generation models
+export const TEXT_GENERATION_MODEL_OPTIONS = Object.entries(MODELS)
+  .filter(([_, m]) => m.task === "text-generation")
+  .map(([key, m]) => ({ key, title: m.title, modelId: m.modelId }));
 
 export const REQUIRED_MODEL_IDS = [
   MODELS[FEATURE_EXTRACTION_ID].modelId,
