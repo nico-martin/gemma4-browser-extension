@@ -12,6 +12,8 @@ export enum BackgroundTasks {
   AGENT_GENERATE_TEXT,
   AGENT_GET_MESSAGES,
   AGENT_CLEAR,
+  SWITCH_MODEL,
+  GET_CURRENT_MODEL,
 }
 
 export enum BackgroundMessages {

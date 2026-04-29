@@ -5,7 +5,10 @@ import {
   pipeline,
 } from "@huggingface/transformers";
 
-import { MODELS, TEXT_GENERATION_ID } from "../../shared/constants.ts";
+import {
+  MODELS,
+  DEFAULT_TEXT_GENERATION_ID,
+} from "../../shared/constants.ts";
 import {
   AgentMetrics,
   ChatMessage,
@@ -29,6 +32,7 @@ type GenerationMetrics = AgentMetrics;
 export type AgentRunMetrics = AgentMetrics;
 
 let pipe: TextGenerationPipeline | null = null;
+let currentTextGenId: string = DEFAULT_TEXT_GENERATION_ID;
 // Gemma 4 E2B context is 8192 but the ONNX model + tool definitions + chat
 // template overhead consume a large portion.  Keep this conservative to avoid
 // "Tensor shape is too large" OrtRun errors.
@@ -49,6 +53,23 @@ const createInitialMessages = (): Array<Message> => [
     content: SYSTEM_PROMPT,
   },
 ];
+export function getCurrentTextGenId(): string {
+  return currentTextGenId;
+}
+
+export async function switchTextGenModel(modelKey: string): Promise<void> {
+  if (!MODELS[modelKey] || MODELS[modelKey].task !== "text-generation") {
+    throw new Error(`Invalid text generation model: ${modelKey}`);
+  }
+  if (modelKey === currentTextGenId && pipe) return;
+  // Dispose current pipeline
+  if (pipe) {
+    await pipe.dispose?.();
+    pipe = null;
+  }
+  currentTextGenId = modelKey;
+}
+
 const END_OF_TEXT_TOKEN_REGEX = /<\|end_of_text\|>/g;
 const sanitizeModelText = (text: string) =>
   text.replace(END_OF_TEXT_TOKEN_REGEX, "").trim();
@@ -59,7 +80,7 @@ const getTextGenerationPipeline = async (
   if (pipe) return pipe;
 
   try {
-    const m = MODELS[TEXT_GENERATION_ID];
+    const m = MODELS[currentTextGenId];
     pipe = (await pipeline("text-generation", m.modelId, {
       dtype: m.dtype,
       device: "webgpu",
