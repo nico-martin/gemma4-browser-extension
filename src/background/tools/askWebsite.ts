@@ -57,6 +57,12 @@ class WebsiteContentManager {
 
     this.currentTabId = tabId;
     this.currentUrl = url;
+    this.currentPageParts = [];
+
+    if (!/^https?:\/\//i.test(url)) {
+      // No content script on non-http URLs, skip silently.
+      return;
+    }
 
     this.loadCurrentPage().catch((error) => {
       console.error("Failed to load page content:", error);
@@ -79,6 +85,7 @@ class WebsiteContentManager {
 
   private async _loadCurrentPageInternal(): Promise<void> {
     let tabId = this.currentTabId;
+    let url = this.currentUrl;
 
     if (!tabId) {
       const [tab] = await chrome.tabs.query({
@@ -86,18 +93,46 @@ class WebsiteContentManager {
         currentWindow: true,
       });
       if (!tab?.id) {
-        throw new Error("No active tab found");
+        // No active tab; treat as empty page rather than throwing.
+        this.currentPageParts = [];
+        return;
       }
       tabId = tab.id;
+      url = tab.url ?? null;
+    }
+
+    // The content script only matches http(s) URLs, so skip everything else
+    // (chrome://, chrome-extension://, file://, devtools://, about:, etc.)
+    // to avoid "Could not establish connection" errors.
+    if (!url || !/^https?:\/\//i.test(url)) {
+      this.currentPageParts = [];
+      return;
     }
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const response = await chrome.tabs.sendMessage(tabId, {
-      type: ContentTasks.EXTRACT_PAGE_DATA,
-    });
+    let response: { parts?: Array<WebsitePart> } | undefined;
+    try {
+      response = await chrome.tabs.sendMessage(tabId, {
+        type: ContentTasks.EXTRACT_PAGE_DATA,
+      });
+    } catch (error) {
+      // Content script not yet injected/listening (e.g., page navigated, was
+      // restored, or chrome blocked injection). Treat as empty rather than
+      // throwing past the catch in loadPageForTab.
+      console.debug(
+        `[askWebsite] No response from content script for ${url}:`,
+        error
+      );
+      this.currentPageParts = [];
+      return;
+    }
 
-    const parts = response.parts as Array<WebsitePart>;
+    const parts = response?.parts;
+    if (!Array.isArray(parts)) {
+      this.currentPageParts = [];
+      return;
+    }
 
     await Promise.all(
       parts.map(async (part, i) => {
