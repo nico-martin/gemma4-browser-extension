@@ -89,20 +89,33 @@ export default defineConfig({
         sidebar: resolve(__dirname, "src/sidebar/index.html"),
         background: resolve(__dirname, "src/background/background.ts"),
         content: resolve(__dirname, "src/content/content.ts"),
+        "page-bootstrap": resolve(__dirname, "src/webmcp/page-bootstrap.ts"),
+        "content-bridge": resolve(__dirname, "src/webmcp/content-bridge.ts"),
       },
       output: {
         entryFileNames: (chunkInfo) => {
-          if (chunkInfo.name === "background" || chunkInfo.name === "content") {
+          if (
+            chunkInfo.name === "background" ||
+            chunkInfo.name === "content" ||
+            chunkInfo.name === "page-bootstrap" ||
+            chunkInfo.name === "content-bridge"
+          ) {
             return "[name].js";
           }
           return "assets/[name]-[hash].js";
         },
         chunkFileNames: "assets/[name]-[hash].js",
         assetFileNames: "assets/[name]-[hash].[ext]",
-        // Prevent code splitting for content script
+        // Prevent code splitting for content scripts (they must be self-contained)
         manualChunks: (id) => {
-          // If the module is imported by content script, inline it
-          if (id.includes('src/content') || id.includes('src/shared')) {
+          if (
+            id.includes("src/content") ||
+            id.includes("src/shared") ||
+            id.includes("src/webmcp") ||
+            id.includes("@mcp-b/webmcp-polyfill") ||
+            id.includes("@cfworker/json-schema") ||
+            id.includes("@standard-schema/spec")
+          ) {
             return undefined;
           }
         },
