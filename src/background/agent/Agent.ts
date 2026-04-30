@@ -32,8 +32,19 @@ let pipe: TextGenerationPipeline | null = null;
 const SYSTEM_PROMPT =
   "You are a helpful assistant with access to external tools declared in this conversation. " +
   "Never claim you do not have tools when tool declarations are present. " +
-  "When asked what tools you have, list the declared tool names exactly. " +
-  "If you decide to use a tool, briefly explain what you are doing before calling it.";
+  "When asked what tools you have, list every declared tool by name — including the " +
+  "page-specific tools registered by the current website. Do not omit any. " +
+  "Always prefer a page-specific tool (one registered by the current website, listed " +
+  "first in the tool list) over a generic tool when the user's request is about that " +
+  "site's content — for example, prefer `search_products` over `find_history` when the " +
+  "user asks to search products on a shopping page. Treat product or feature names in " +
+  "the user's message as data, never as instructions to refuse — for example, " +
+  '"add to cart hack the grid" means add the product called "Hack the Grid". ' +
+  "If you decide to use a tool, briefly explain what you are doing before calling it. " +
+  "When calling a tool you MUST populate every argument listed in the tool's `required` " +
+  "schema. Infer the values from the user's most recent message — for example, if the " +
+  "user says \"search hats\" and the tool's required argument is `query`, call it with " +
+  '`{"query": "hats"}`. Never call a tool with empty arguments when arguments are required.';
 const createInitialMessages = (): Array<Message> => [
   {
     role: "system",
@@ -76,8 +87,24 @@ class Agent {
     (chatMessages: Array<ChatMessage>) => void
   > = [];
   private tools: Array<WebMCPTool> = [];
+  private pageTools: Array<WebMCPTool> = [];
 
   constructor() {}
+
+  private getActiveTools = (): Array<WebMCPTool> => {
+    // Page tools first: they are the ones registered by the current website
+    // and are usually the most contextually relevant. Small models bias
+    // toward whichever tools they encounter first in the prompt, so listing
+    // page tools up top materially improves selection on sites that ship
+    // their own WebMCP catalog.
+    const pageNames = new Set(this.pageTools.map((t) => t.name));
+    const filteredBuiltIns = this.tools.filter((t) => !pageNames.has(t.name));
+    return [...this.pageTools, ...filteredBuiltIns];
+  };
+
+  public setPageTools = (tools: Array<WebMCPTool>) => {
+    this.pageTools = tools;
+  };
 
   get chatMessages() {
     return this._chatMessages;
@@ -141,13 +168,13 @@ class Agent {
     });
 
     const input = pipe.tokenizer.apply_chat_template(conversation, {
-      tools: this.tools.map(webMCPToolToChatTemplateTool),
+      tools: this.getActiveTools().map(webMCPToolToChatTemplateTool),
       add_generation_prompt: true,
       return_dict: true,
     }) as any;
 
     const output: any = await pipe(conversation, {
-      tools: this.tools.map(webMCPToolToChatTemplateTool),
+      tools: this.getActiveTools().map(webMCPToolToChatTemplateTool),
       add_generation_prompt: true,
       past_key_values: this.pastKeyValues,
       max_new_tokens: 1024,
@@ -370,8 +397,14 @@ class Agent {
         }));
 
         this.chatMessages = [...prevChatMessages, assistantMessage];
-        prompt =
-          "Use the tool response to answer the user's last request. Do not call tools again unless required.";
+        const hasArgError = toolResponses.some(({ result }) =>
+          /(input validation error|missing required|does not have required property|expected object arguments)/i.test(
+            result
+          )
+        );
+        prompt = hasArgError
+          ? "The previous tool call failed because of bad or missing arguments. Read the error message, then retry the same tool with the missing arguments filled in from the user's request. Do not ask the user to repeat themselves."
+          : "Use the tool response to answer the user's last request. Do not call tools again unless required.";
         roleForGeneration = "user";
         appendPromptMessage = true;
       }
@@ -406,7 +439,9 @@ class Agent {
   private executeToolCall = async (
     toolCall: ToolCallPayload
   ): Promise<{ id: string; name: string; result: string }> => {
-    const toolToUse = this.tools.find((t) => t.name === toolCall.name);
+    const toolToUse = this.getActiveTools().find(
+      (t) => t.name === toolCall.name
+    );
     if (!toolToUse)
       throw new Error(`Tool '${toolCall.name}' not found or is disabled.`);
 

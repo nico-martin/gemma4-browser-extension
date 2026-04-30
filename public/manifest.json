@@ -20,6 +20,18 @@
       "matches": ["http://*/*", "https://*/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["page-bootstrap.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content-bridge.js"],
+      "world": "ISOLATED",
+      "run_at": "document_start"
     }
   ],
   "action": {

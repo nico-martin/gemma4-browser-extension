@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
+    "@mcp-b/webmcp-polyfill": "^2.2.0",
     "idb": "^8.0.3",
     "lucide-react": "^0.553.0",
     "react": "^19.2.0",

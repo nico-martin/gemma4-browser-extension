@@ -12,12 +12,20 @@ export enum BackgroundTasks {
   AGENT_GENERATE_TEXT,
   AGENT_GET_MESSAGES,
   AGENT_CLEAR,
+  WEBMCP_GET_TOOLS_FOR_ACTIVE_TAB,
 }
 
 export enum BackgroundMessages {
   MODEL_CHECK,
   DOWNLOAD_PROGRESS,
   MESSAGES_UPDATE,
+  WEBMCP_TOOLS_UPDATED,
+}
+
+export interface WebMCPToolSummary {
+  name: string;
+  description: string;
+  inputSchema?: Record<string, any>;
 }
 
 export enum ContentTasks {

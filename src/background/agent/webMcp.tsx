@@ -22,10 +22,13 @@ export interface WebMCPTool {
   description: string;
   inputSchema: {
     type: "object";
-    properties: Record<string, WebMCPProperty>;
-    required: Array<string>;
+    properties: Record<string, WebMCPProperty> | Record<string, any>;
+    required?: Array<string>;
   };
   execute: (args: Record<string, any>) => Promise<string>;
+  // When true, skip the local argument validator. Used by page-supplied tools
+  // whose schemas are arbitrary JSON Schema validated by the page polyfill.
+  bypassValidation?: boolean;
 }
 
 export const webMCPToolToChatTemplateTool = (
@@ -65,8 +68,9 @@ export const validateWebMCPToolArguments = (
     return { ...acc, [curr[0]]: curr[1] };
   }, {});
 
-  if (tool.inputSchema.required.length !== 0) {
-    const missingArguments = tool.inputSchema.required.filter(
+  const required = tool.inputSchema.required ?? [];
+  if (required.length !== 0) {
+    const missingArguments = required.filter(
       (argument) => !(argument in returnArgs)
     );
 
@@ -97,6 +101,8 @@ export const executeWebMCPTool = async (
     parsedArgs = args;
   }
 
-  const validatedArgs = validateWebMCPToolArguments(tool, parsedArgs);
+  const validatedArgs = tool.bypassValidation
+    ? parsedArgs
+    : validateWebMCPToolArguments(tool, parsedArgs);
   return await tool.execute(validatedArgs);
 };

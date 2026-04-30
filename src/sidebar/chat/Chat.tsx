@@ -8,6 +8,7 @@ import {
   BackgroundTasks,
   ChatMessage,
   ResponseStatus,
+  WebMCPToolSummary,
 } from "../../shared/types.ts";
 import { Button, InputText } from "../theme";
 import cn from "../utils/classnames.ts";
@@ -42,6 +43,8 @@ export default function Chat() {
 
   const [activeTools, setActiveTools] = useState<ToolName[]>();
   const [toolsLoaded, setToolsLoaded] = useState<boolean>(false);
+  const [pageTools, setPageTools] = useState<WebMCPToolSummary[]>([]);
+  const [pageToolsTabId, setPageToolsTabId] = useState<number | null>(null);
 
   const inputValue = watch("input");
 
@@ -112,7 +115,25 @@ export default function Chat() {
       if (message.type === BackgroundMessages.MESSAGES_UPDATE) {
         setMessages(message.messages);
       }
+      if (message.type === BackgroundMessages.WEBMCP_TOOLS_UPDATED) {
+        setPageTools(message.tools ?? []);
+        setPageToolsTabId(
+          typeof message.tabId === "number" ? message.tabId : null
+        );
+      }
     });
+
+    chrome.runtime.sendMessage(
+      { type: BackgroundTasks.WEBMCP_GET_TOOLS_FOR_ACTIVE_TAB },
+      (
+        resp:
+          | { tools?: WebMCPToolSummary[]; tabId?: number | null }
+          | undefined
+      ) => {
+        if (resp?.tools) setPageTools(resp.tools);
+        if (typeof resp?.tabId === "number") setPageToolsTabId(resp.tabId);
+      }
+    );
   }, []);
 
   // Forward keyboard events to ChatCommands
@@ -130,6 +151,7 @@ export default function Chat() {
       {
         type: BackgroundTasks.AGENT_GENERATE_TEXT,
         prompt: data.input,
+        tabId: pageToolsTabId,
       },
       (resp) => {
         if (resp.status === ResponseStatus.ERROR) {
@@ -191,6 +213,7 @@ export default function Chat() {
         {toolsOpen && (
           <ChatToolsModal
             activeTools={activeTools}
+            pageTools={pageTools}
             onClose={() => setToolsOpen(false)}
             onSubmit={(tools: ToolName[]) => {
               setActiveTools(tools);

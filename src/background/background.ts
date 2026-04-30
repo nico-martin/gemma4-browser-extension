@@ -6,8 +6,10 @@ import {
   BackgroundMessages,
   BackgroundTasks,
   ResponseStatus,
+  WebMCPToolSummary,
 } from "../shared/types.ts";
 import Agent from "./agent/Agent.ts";
+import { WebMCPTool } from "./agent/webMcp.tsx";
 import {
   createAskWebsiteTool,
   highlightWebsiteElementTool,
@@ -40,6 +42,109 @@ const onModelDownloadProgress = (modelId: string, percentage: number) => {
 const featureExtractor = new FeatureExtractor();
 const vectorHistory = new VectorHistory(featureExtractor);
 let currentAgent: Agent | null = null;
+
+// Tools registered by each tab's page via the WebMCP polyfill.
+const webmcpToolsByTab: Map<number, WebMCPToolSummary[]> = new Map();
+
+const MAX_TOOL_NAME_LENGTH = 64;
+const MAX_TOOL_DESCRIPTION_LENGTH = 512;
+const VALID_TOOL_NAME = /^[A-Za-z0-9_-]+$/;
+
+// Tool metadata is page-controlled and flows verbatim into the LLM prompt.
+// We can't fully sandbox prompt content, but we cap length and reject obvious
+// shenanigans (control chars, oversized strings, missing/invalid names).
+const sanitizeWebMCPTools = (raw: unknown): WebMCPToolSummary[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry): WebMCPToolSummary | null => {
+      if (!entry || typeof entry !== "object") return null;
+      const e = entry as Record<string, unknown>;
+
+      const name =
+        typeof e.name === "string" ? e.name.trim() : "";
+      if (
+        !name ||
+        name.length > MAX_TOOL_NAME_LENGTH ||
+        !VALID_TOOL_NAME.test(name)
+      ) {
+        return null;
+      }
+
+      const rawDescription =
+        typeof e.description === "string" ? e.description : "";
+      const description = rawDescription
+        // Strip control chars (incl. NUL) so they can't terminate strings or
+        // break the chat template.
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\u0000-\u001F\u007F]/g, " ")
+        .slice(0, MAX_TOOL_DESCRIPTION_LENGTH);
+
+      const inputSchema =
+        e.inputSchema && typeof e.inputSchema === "object"
+          ? (e.inputSchema as Record<string, unknown>)
+          : { type: "object", properties: {}, required: [] };
+
+      return { name, description, inputSchema };
+    })
+    .filter((t): t is WebMCPToolSummary => t !== null);
+};
+
+const getActiveTabId = async (): Promise<number | null> => {
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+  return tab?.id ?? null;
+};
+
+const buildPageWebMCPTools = (
+  tabId: number,
+  summaries: WebMCPToolSummary[]
+): WebMCPTool[] =>
+  summaries.map((summary) => ({
+    name: summary.name,
+    description: summary.description,
+    inputSchema: (summary.inputSchema as any) ?? {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+    bypassValidation: true,
+    execute: async (args: Record<string, any>) => {
+      try {
+        const response: any = await chrome.tabs.sendMessage(tabId, {
+          type: "webmcp:call",
+          name: summary.name,
+          args,
+        });
+        if (!response) {
+          return `Error: no response from page for tool '${summary.name}'`;
+        }
+        if (response.ok) {
+          const result = response.result;
+          if (typeof result === "string") return result;
+          try {
+            return JSON.stringify(result);
+          } catch {
+            return String(result);
+          }
+        }
+        return `Error: ${response.error ?? "unknown error"}`;
+      } catch (error) {
+        return `Error calling page tool '${summary.name}': ${error instanceof Error ? error.message : String(error)}`;
+      }
+    },
+  }));
+
+const broadcastActiveTabTools = async () => {
+  const tabId = await getActiveTabId();
+  const tools = tabId !== null ? (webmcpToolsByTab.get(tabId) ?? []) : [];
+  chrome.runtime.sendMessage({
+    type: BackgroundMessages.WEBMCP_TOOLS_UPDATED,
+    tools,
+    tabId,
+  });
+};
 
 const availableTools: Record<string, () => any> = {
   [AvailableTools.GET_OPEN_TABS]: () => getOpenTabsTool,
@@ -83,7 +188,25 @@ const getAgent = (): Agent => {
   return currentAgent;
 };
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "webmcp:tools") {
+    const tabId = sender.tab?.id;
+    if (typeof tabId === "number") {
+      webmcpToolsByTab.set(tabId, sanitizeWebMCPTools(message.tools));
+      void broadcastActiveTabTools();
+    }
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message?.type === BackgroundTasks.WEBMCP_GET_TOOLS_FOR_ACTIVE_TAB) {
+    getActiveTabId().then((tabId) => {
+      const tools = tabId !== null ? (webmcpToolsByTab.get(tabId) ?? []) : [];
+      sendResponse({ status: ResponseStatus.SUCCESS, tools, tabId });
+    });
+    return true;
+  }
+
   if (message.type === BackgroundTasks.CHECK_MODELS) {
     Promise.all(
       REQUIRED_MODEL_IDS.map(async (modelId) => {
@@ -156,15 +279,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === BackgroundTasks.AGENT_GENERATE_TEXT) {
     const agent = getAgent();
-    agent
-      .runAgent(message.prompt)
-      .then((metrics) => {
+    (async () => {
+      try {
+        // Prefer the tabId the sidebar tells us — it's the tab whose tools
+        // the user can actually see. Fall back to lastFocusedWindow lookup
+        // only if the sidebar didn't provide one (older message format).
+        const requestedTabId =
+          typeof message.tabId === "number" ? message.tabId : null;
+        const tabId = requestedTabId ?? (await getActiveTabId());
+        const summaries =
+          tabId !== null ? (webmcpToolsByTab.get(tabId) ?? []) : [];
+        agent.setPageTools(
+          tabId !== null ? buildPageWebMCPTools(tabId, summaries) : []
+        );
+        const metrics = await agent.runAgent(message.prompt);
         sendResponse({ status: ResponseStatus.SUCCESS, metrics });
-      })
-      .catch((error: Error) => {
+      } catch (error: any) {
         console.error("GENERATE_TEXT failed:", error);
         sendResponse({ status: ResponseStatus.ERROR, error: error.message });
-      });
+      }
+    })();
 
     return true;
   }
@@ -240,9 +374,27 @@ const addCurrentPageToVectorHistory = async (tabId: number, tab: Tab) => {
 };
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === "loading") {
+    // Page is navigating; clear stale tools until the new page registers them.
+    if (webmcpToolsByTab.has(tabId)) {
+      webmcpToolsByTab.delete(tabId);
+      void broadcastActiveTabTools();
+    }
+  }
+
   if (changeInfo.status !== "complete") return;
   if (!tab.url?.startsWith("http")) return;
 
   // Add page to vector history for later retrieval
   addCurrentPageToVectorHistory(tabId, tab);
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (webmcpToolsByTab.delete(tabId)) {
+    void broadcastActiveTabTools();
+  }
+});
+
+chrome.tabs.onActivated.addListener(() => {
+  void broadcastActiveTabTools();
 });

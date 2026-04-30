@@ -1,11 +1,17 @@
 import { useState } from "react";
 
 import { AvailableTools, ToolName } from "../../shared/tools.ts";
-import { BackgroundTasks, ResponseStatus } from "../../shared/types.ts";
+import {
+  BackgroundTasks,
+  ResponseStatus,
+  WebMCPToolSummary,
+} from "../../shared/types.ts";
 import { Button, Modal } from "../theme";
+import cn from "../utils/classnames.ts";
 
 interface ChatToolsModalProps {
   activeTools: ToolName[];
+  pageTools: WebMCPToolSummary[];
   onClose: () => void;
   onSubmit: (tools: ToolName[]) => void;
 }
@@ -41,8 +47,11 @@ const toolMetadata: Record<ToolName, { label: string; description: string }> = {
   },
 };
 
+type Tab = "builtin" | "page";
+
 export default function ChatToolsModal({
   activeTools,
+  pageTools,
   onClose,
   onSubmit,
 }: ChatToolsModalProps) {
@@ -50,6 +59,7 @@ export default function ChatToolsModal({
     new Set(activeTools)
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>("builtin");
 
   const handleToggle = (tool: ToolName) => {
     const newSelected = new Set(selectedTools);
@@ -66,7 +76,6 @@ export default function ChatToolsModal({
 
     const toolsArray = Array.from(selectedTools);
 
-    // Send AGENT_INITIALIZE with selected tools
     chrome.runtime.sendMessage(
       {
         type: BackgroundTasks.AGENT_INITIALIZE,
@@ -83,41 +92,96 @@ export default function ChatToolsModal({
     );
   };
 
+  const tabClass = (tab: Tab) =>
+    cn(
+      "px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+      activeTab === tab
+        ? "border-chrome-accent-primary text-chrome-text-primary"
+        : "border-transparent text-chrome-text-secondary hover:text-chrome-text-primary"
+    );
+
   return (
     <Modal title="Configure Tools" onClose={onClose}>
       <div className="space-y-4">
-        <p className="text-sm text-chrome-text-secondary">
-          Select which tools the agent can use. Changes will reset the current
-          conversation.
-        </p>
-
-        <div className="space-y-3 overflow-y-auto">
-          {Object.values(AvailableTools).map((tool) => {
-            const metadata = toolMetadata[tool];
-            return (
-              <div
-                key={tool}
-                className="flex items-start gap-3 rounded-lg border border-chrome-border p-3"
-              >
-                <input
-                  type="checkbox"
-                  id={tool}
-                  checked={selectedTools.has(tool)}
-                  onChange={() => handleToggle(tool)}
-                  className="mt-1 h-4 w-4 cursor-pointer rounded border transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none bg-chrome-bg-primary border-chrome-border text-chrome-accent-primary focus:border-chrome-accent-primary focus:ring-chrome-accent-primary focus:ring-offset-chrome-bg-primary"
-                />
-                <label htmlFor={tool} className="flex-1 cursor-pointer">
-                  <div className="text-sm font-medium text-chrome-text-primary">
-                    {metadata.label}
-                  </div>
-                  <div className="text-xs text-chrome-text-secondary mt-1">
-                    {metadata.description}
-                  </div>
-                </label>
-              </div>
-            );
-          })}
+        <div className="flex items-center gap-2 border-b border-chrome-border">
+          <button type="button" className={tabClass("builtin")} onClick={() => setActiveTab("builtin")}>
+            Built-in
+          </button>
+          <button type="button" className={tabClass("page")} onClick={() => setActiveTab("page")}>
+            Page tools{pageTools.length > 0 ? ` (${pageTools.length})` : ""}
+          </button>
         </div>
+
+        {activeTab === "builtin" && (
+          <>
+            <p className="text-sm text-chrome-text-secondary">
+              Select which tools the agent can use. Changes will reset the current
+              conversation.
+            </p>
+
+            <div className="space-y-3 overflow-y-auto max-h-96">
+              {Object.values(AvailableTools).map((tool) => {
+                const metadata = toolMetadata[tool];
+                return (
+                  <div
+                    key={tool}
+                    className="flex items-start gap-3 rounded-lg border border-chrome-border p-3"
+                  >
+                    <input
+                      type="checkbox"
+                      id={tool}
+                      checked={selectedTools.has(tool)}
+                      onChange={() => handleToggle(tool)}
+                      className="mt-1 h-4 w-4 cursor-pointer rounded border transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none bg-chrome-bg-primary border-chrome-border text-chrome-accent-primary focus:border-chrome-accent-primary focus:ring-chrome-accent-primary focus:ring-offset-chrome-bg-primary"
+                    />
+                    <label htmlFor={tool} className="flex-1 cursor-pointer">
+                      <div className="text-sm font-medium text-chrome-text-primary">
+                        {metadata.label}
+                      </div>
+                      <div className="text-xs text-chrome-text-secondary mt-1">
+                        {metadata.description}
+                      </div>
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {activeTab === "page" && (
+          <>
+            <p className="text-sm text-chrome-text-secondary">
+              Tools the current page registered via WebMCP. These are always
+              available to the agent and are not affected by built-in tool
+              selection.
+            </p>
+
+            {pageTools.length === 0 ? (
+              <div className="rounded-lg border border-chrome-border p-4 text-sm text-chrome-text-secondary">
+                No WebMCP tools on this page.
+              </div>
+            ) : (
+              <ul className="space-y-2 overflow-y-auto max-h-96">
+                {pageTools.map((tool) => (
+                  <li
+                    key={tool.name}
+                    className="rounded-lg border border-chrome-border p-3"
+                  >
+                    <div className="text-sm font-medium text-chrome-text-primary">
+                      {tool.name}
+                    </div>
+                    {tool.description && (
+                      <div className="text-xs text-chrome-text-secondary mt-1">
+                        {tool.description}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
 
         <div className="flex justify-end gap-2 pt-4 border-t border-chrome-border">
           <Button
@@ -134,7 +198,7 @@ export default function ChatToolsModal({
             variant="solid"
             color="primary"
             onClick={handleSubmit}
-            disabled={isSubmitting}
+            disabled={isSubmitting || activeTab !== "builtin"}
             loading={isSubmitting}
           >
             Apply Changes
