@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "NOG Browser Extension",
+  "short_name": "NOG",
+  "version": "0.1.0",
+  "description": "Recherche juridique Legifrance / CanLII assistée par NOGverse pour les avocats.",
+  "permissions": ["sidePanel", "activeTab", "storage", "scripting", "tabs", "identity"],
+  "host_permissions": [
+    "https://api.nogverse.ai/*",
+    "https://*.nogverse.ai/*",
+    "https://login.microsoftonline.com/*",
+    "https://*.legifrance.gouv.fr/*",
+    "https://*.canlii.org/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "src/sidebar/index.html"
+  },
+  "action": {
+    "default_title": "NOG — Recherche juridique"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.nogverse.ai https://login.microsoftonline.com https://login.live.com"
+  },
+  "minimum_chrome_version": "116"
+}
