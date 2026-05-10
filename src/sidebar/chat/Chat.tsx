@@ -178,26 +178,35 @@ export default function Chat() {
           ))
         )}
       </div>
+      <div className="sticky bottom-0 border-t border-chrome-border px-6 py-4 bg-chrome-bg-secondary z-20">
 
-      <div className="border-t border-chrome-border px-6 py-4 bg-chrome-bg-secondary relative">
-        <ChatCommands
-          ref={commandsRef}
-          commands={commands}
-          inputValue={inputValue}
-          isOpen={showCommands}
-          onClose={() => setShowCommands(false)}
-          onExecute={() => setShowCommands(false)}
-        />
-        {toolsOpen && (
-          <ChatToolsModal
-            activeTools={activeTools}
-            onClose={() => setToolsOpen(false)}
-            onSubmit={(tools: ToolName[]) => {
-              setActiveTools(tools);
-              setToolsOpen(false);
-            }}
+        {/* Commands dropdown */}
+        <div className="absolute bottom-full left-0 w-full mb-2 z-30">
+          <ChatCommands
+            ref={commandsRef}
+            commands={commands}
+            inputValue={inputValue}
+            isOpen={showCommands}
+            onClose={() => setShowCommands(false)}
+            onExecute={() => setShowCommands(false)}
           />
+        </div>
+
+        {/* Tools modal */}
+        {toolsOpen && (
+          <div className="absolute bottom-full left-0 w-full mb-2 z-30">
+            <ChatToolsModal
+              activeTools={activeTools}
+              onClose={() => setToolsOpen(false)}
+              onSubmit={(tools: ToolName[]) => {
+                setActiveTools(tools);
+                setToolsOpen(false);
+              }}
+            />
+          </div>
         )}
+
+        {/* Input Form */}
         <form onSubmit={handleSubmit(onSubmit)} className="flex gap-3">
           <Button
             type="button"
@@ -206,6 +215,7 @@ export default function Chat() {
             iconLeft={<Hammer />}
             onClick={() => setToolsOpen(true)}
           />
+
           <Controller
             name="input"
             control={control}
@@ -214,9 +224,7 @@ export default function Chat() {
               <InputText
                 {...field}
                 id="chat-input"
-                label="Message"
                 placeholder="Type your message or / for commands..."
-                //disabled={isLoading}
                 error={errors.input?.message}
                 hideLabel
                 className="flex-1"
@@ -228,6 +236,7 @@ export default function Chat() {
               />
             )}
           />
+
           <Button
             type="submit"
             disabled={isLoading || showCommands}
