@@ -9,7 +9,6 @@ const highlightParagraph = (id: string): void => {
   }
 
   const element = getElementById(id) as HTMLElement | undefined;
-  console.log(element);
   if (element) {
     const rect = element.getBoundingClientRect();
     const top = rect.top + window.scrollY - window.innerHeight / 2;

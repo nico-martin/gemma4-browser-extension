@@ -2,7 +2,7 @@ import { ToolCallPayload } from "./types.ts";
 
 const parseGemmaArguments = (rawArguments: string): Record<string, any> => {
   const normalized = rawArguments
-    .replace(/<\|\"\|>/g, '"')
+    .replace(/<\|"\|>/g, '"')
     .replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":');
 
   try {
@@ -101,7 +101,7 @@ export const extractToolCalls = (
     cleanedText.matchAll(/<tool_call>([\s\S]*?)<\/tool_call>/g)
   );
   const gemmaMatches = Array.from(
-    cleanedText.matchAll(/<\|tool_call\>([\s\S]*?)<tool_call\|>/g)
+    cleanedText.matchAll(/<\|tool_call>([\s\S]*?)<tool_call\|>/g)
   );
   const bareGemmaMatches = extractBareGemmaToolCalls(cleanedText);
   const toolCalls: ToolCallPayload[] = [];
@@ -126,8 +126,8 @@ export const extractToolCalls = (
 
   for (const match of gemmaMatches) {
     const payload = match[1].trim();
-    const nameMatch = payload.match(/^call:([^\{]+)\{/);
-    const argsMatch = payload.match(/^call:[^\{]+(\{[\s\S]*\})$/);
+    const nameMatch = payload.match(/^call:([^{]+){/);
+    const argsMatch = payload.match(/^call:[^{]+({[\s\S]*})$/);
 
     if (!nameMatch) {
       continue;
@@ -180,11 +180,11 @@ export const extractToolCalls = (
   // Incomplete: <tool_call>... (no closing tag yet)
   const message = textWithoutBareCalls
     .replace(/<\|end_of_text\|>/g, "")
-    .replace(/<\|tool_response\>[\s\S]*?<tool_response\|>/g, "")
+    .replace(/<\|tool_response>[\s\S]*?<tool_response\|>/g, "")
     .replace(/<tool_response>[\s\S]*?<\/tool_response>/g, "")
-    .replace(/<\|tool_response\>|<tool_response\|>/g, "")
+    .replace(/<\|tool_response>|<tool_response\|>/g, "")
     .replace(/<tool_response>|<\/tool_response>/g, "")
-    .replace(/<\|tool_call\>[\s\S]*?(?:<tool_call\|>|$)/g, "")
+    .replace(/<\|tool_call>[\s\S]*?(?:<tool_call\|>|$)/g, "")
     .replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/g, "")
     .trim();
 

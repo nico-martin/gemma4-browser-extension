@@ -90,7 +90,7 @@ export const executeWebMCPTool = async (
   if (typeof args === "string") {
     try {
       parsedArgs = JSON.parse(args);
-    } catch (error) {
+    } catch (_error) {
       parsedArgs = {};
     }
   } else if (args) {

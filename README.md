@@ -182,3 +182,14 @@ This architecture is particularly well-suited for browser-based ML:
 3. **Scalable**: Can handle requests from multiple tabs simultaneously
 4. **Secure**: Maintains browser security model while enabling powerful features
 5. **WebGPU acceleration**: Background script can leverage WebGPU for fast inference
+
+
+## Permissions
+
+This extension requests the following permissions:
+
+- **`host_permissions: ["http://*/*", "https://*/*"]`** — Required to read page content (via `ask_website` tool) and inject the content script for paragraph highlighting on any site the user is browsing. No data is sent to external servers; all processing runs locally via WebGPU.
+- **`tabs`** — Required for tab management tools (`get_open_tabs`, `go_to_tab`, `open_url`, `close_tab`).
+- **`history`** — Required for the `find_history` tool to search browser history.
+- **`scripting`** — Required to extract page content and descriptions from active tabs.
+- **`sidePanel`** — Required to display the agent interface as a browser side panel.

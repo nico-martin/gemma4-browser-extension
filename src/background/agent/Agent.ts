@@ -30,10 +30,29 @@ export type AgentRunMetrics = AgentMetrics;
 
 let pipe: TextGenerationPipeline | null = null;
 const SYSTEM_PROMPT =
-  "You are a helpful assistant with access to external tools declared in this conversation. " +
-  "Never claim you do not have tools when tool declarations are present. " +
-  "When asked what tools you have, list the declared tool names exactly. " +
-  "If you decide to use a tool, briefly explain what you are doing before calling it.";
+  "You are a helpful browser assistant with access to external tools for tab management, webpage content search, and browsing history retrieval. " +
+  "Always use the appropriate tools to complete tasks: " +
+  "- Use 'get_open_tabs' to list all open browser tabs " +
+  "- Use 'go_to_tab' to switch to a specific tab by ID " +
+  "- Use 'open_url' to open new URLs in tabs " +
+  "- Use 'close_tab' to close tabs " +
+  "- Use 'ask_website' to search for information on the current page by semantically searching page content " +
+  "- Use 'highlight_website_element' to highlight found content with an element ID " +
+  "- Use 'find_history' to search your browsing history semantically " +
+  "Tab IDs are not sequential numbers. When the user refers to a tab by its position, number, name, or title (e.g. 'tab 1', 'the first tab', 'the YouTube tab'), ALWAYS call get_open_tabs first to find its actual id, then call go_to_tab or close_tab with that id. Never ask the user for a tab id. " +
+  "get_open_tabs returns a JSON array ordered by position. 'tab 1' or 'the first tab' is simply the FIRST element of that array, 'tab 2' the second element, and so on (1-based). Take that element's numeric `id` field and immediately call go_to_tab with it. " +
+  "Worked example: if get_open_tabs returns [{\"id\": 482, \"title\": \"Docs\"}, {\"id\": 517, \"title\": \"News\"}] and the user said 'go to tab 1', you call go_to_tab with tabId 482 (the id of the first element). Never reply that the request is ambiguous in this case. " +
+  "When the user asks to close the active or current tab, call get_open_tabs, find the tab whose 'active' field is true, and call close_tab with its id. " +
+  "You are running inside a browser sidebar. The user is always looking at a webpage while talking to you. " +
+  "ALWAYS call ask_website FIRST for ANY of these — do not ask the user which page or site they mean, just call it immediately: " +
+  "questions about news ('今日のニュース', 'what is the news today', 'latest news'), " +
+  "questions about trends ('トレンドワード', 'trending topics', 'what is popular'), " +
+  "questions about what a page or site contains ('何が書いてある', 'what does it say about X', 'tell me about X on this page'), " +
+  "requests to summarize or read the page ('要約して', 'summarize this', 'what is this page about'), " +
+  "ANY content question where the answer might be on the current webpage. " +
+  "Rule: when in doubt, call ask_website. You are a browser assistant — always check the page first. " +
+  "When a user asks about past pages or browsing history, ALWAYS use find_history. " +
+  "Briefly explain what you are doing before calling each tool.";
 const createInitialMessages = (): Array<Message> => [
   {
     role: "system",
@@ -196,14 +215,12 @@ class Agent {
       }
     }
 
-    const generatedIds: any = pipe.tokenizer(response, {
-      add_special_tokens: false,
-    }).input_ids;
-    const generatedTokens = Array.isArray(generatedIds?.[0])
-      ? generatedIds[0].length
-      : Array.isArray(generatedIds)
-        ? generatedIds.length
-        : 0;
+    const tokenized = pipe.tokenizer(response, { add_special_tokens: false });
+    // input_ids is a Tensor with shape [1, seq_len]; use dims to get token count
+    const generatedTokens: number =
+      (tokenized.input_ids as any)?.dims?.[1] ??
+      (tokenized.input_ids as any)?.dims?.[0] ??
+      0;
 
     response = sanitizeModelText(response);
 
@@ -269,7 +286,7 @@ class Agent {
       const { toolCalls, message } = extractToolCalls(response);
 
       toolCalls.map((tool) => {
-        if (!Boolean(assistantMessage.tools.find(({ id }) => tool.id === id))) {
+        if (!assistantMessage.tools.find(({ id }) => tool.id === id)) {
           assistantMessage.tools = [
             ...assistantMessage.tools,
             {
@@ -371,7 +388,9 @@ class Agent {
 
         this.chatMessages = [...prevChatMessages, assistantMessage];
         prompt =
-          "Use the tool response to answer the user's last request. Do not call tools again unless required.";
+          "Use the tool response above to continue the user's last request. " +
+          "If completing the request needs another tool (for example, after listing tabs you still need to switch or close one), call that tool now. " +
+          "Only give a final text answer once the request is fully done.";
         roleForGeneration = "user";
         appendPromptMessage = true;
       }

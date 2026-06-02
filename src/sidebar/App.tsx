@@ -58,7 +58,7 @@ export default function App() {
       ) => {
         if (e.status === ResponseStatus.SUCCESS) {
           setModelSize(e.results.reduce((acc, model) => acc + model.size, 0));
-          if (Boolean(e.results.find((r) => !r.cached))) {
+          if (e.results.find((r) => !r.cached)) {
             setStatus(AppStatus.NEEDS_DOWNLOAD);
           } else {
             setStatus(AppStatus.READY);
