@@ -1,15 +1,31 @@
-import { ChevronLeft, ChevronRight, Wrench } from "lucide-react";
+import { Ban, Check, ChevronLeft, ChevronRight, Wrench } from "lucide-react";
 import { useState } from "react";
 
-import { ChatMessageTool } from "../../shared/types.ts";
+import { getToolLabel } from "../../shared/tools.ts";
+import {
+  ChatMessageTool,
+  ToolPermissionDecision,
+} from "../../shared/types.ts";
 import { Loader } from "../theme";
 import cn from "../utils/classnames.ts";
 
+const statusLabel: Record<ChatMessageTool["status"], string> = {
+  pending_permission: "approve tool call",
+  running: "calling tool",
+  completed: "called tool",
+  denied: "denied tool",
+};
+
 export default function MessageToolCall({
   tools,
+  onPermissionDecision,
   className = "",
 }: {
   tools: Array<ChatMessageTool>;
+  onPermissionDecision: (
+    toolCallId: string,
+    decision: ToolPermissionDecision
+  ) => void;
   className?: string;
 }) {
   const [currentToolIndex, setCurrentToolIndex] = useState(0);
@@ -24,7 +40,9 @@ export default function MessageToolCall({
   };
 
   const activeTool = tools[currentToolIndex];
-  const isLoading = activeTool.result === "";
+  const isLoading = activeTool.status === "running";
+  const isPending = activeTool.status === "pending_permission";
+  const isDenied = activeTool.status === "denied";
 
   return (
     <div
@@ -38,8 +56,15 @@ export default function MessageToolCall({
           className="flex items-center gap-2 text-xs cursor-pointer"
           onClick={() => setExpanded(!expanded)}
         >
-          {isLoading ? <Loader size="xs" /> : <Wrench className="h-3 w-3" />}
-          {isLoading ? "calling tool" : "called tool"} <b>{activeTool.name}</b>
+          {isLoading ? (
+            <Loader size="xs" />
+          ) : isDenied ? (
+            <Ban className="h-3 w-3 text-chrome-text-secondary" />
+          ) : (
+            <Wrench className="h-3 w-3" />
+          )}
+          {statusLabel[activeTool.status]}{" "}
+          <b>{getToolLabel(activeTool.name)}</b>
         </button>
         {tools.length > 1 && (
           <div className="flex items-center gap-1">
@@ -71,6 +96,37 @@ export default function MessageToolCall({
           </div>
         )}
       </div>
+      {isPending && (
+        <div className="mt-3 space-y-2">
+          <code className="text-xs bg-chrome-bg-primary px-2 py-1 rounded block text-chrome-accent-primary font-mono overflow-hidden">
+            {activeTool.functionSignature}
+          </code>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() =>
+                onPermissionDecision(activeTool.id, "allow_once")
+              }
+              className="inline-flex items-center gap-1 rounded bg-chrome-accent-primary px-2.5 py-1 text-xs font-medium text-chrome-bg-primary hover:bg-chrome-accent-hover cursor-pointer"
+            >
+              <Check className="h-3 w-3" /> Allow once
+            </button>
+            <button
+              onClick={() =>
+                onPermissionDecision(activeTool.id, "always_allow")
+              }
+              className="inline-flex items-center gap-1 rounded border border-chrome-accent-primary px-2.5 py-1 text-xs font-medium text-chrome-accent-primary hover:bg-chrome-hover cursor-pointer"
+            >
+              Always allow {getToolLabel(activeTool.name)}
+            </button>
+            <button
+              onClick={() => onPermissionDecision(activeTool.id, "deny")}
+              className="inline-flex items-center gap-1 rounded border border-chrome-border px-2.5 py-1 text-xs font-medium text-chrome-text-secondary hover:bg-chrome-hover cursor-pointer"
+            >
+              <Ban className="h-3 w-3" /> Deny
+            </button>
+          </div>
+        </div>
+      )}
       {expanded && (
         <div className="space-y-2 mt-2">
           <div>

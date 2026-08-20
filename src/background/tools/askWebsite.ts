@@ -2,6 +2,24 @@ import { ContentTasks, WebsitePart } from "../../shared/types.ts";
 import { WebMCPTool } from "../agent/webMcp.tsx";
 import FeatureExtractor from "../utils/FeatureExtractor.ts";
 
+const sendMessageWithInjection = async (
+  tabId: number,
+  message: unknown
+): Promise<any> => {
+  try {
+    return await chrome.tabs.sendMessage(tabId, message);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (!msg.includes("Receiving end does not exist")) throw error;
+    // Content script wasn't auto-injected (page predates the extension reload).
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"],
+    });
+    return await chrome.tabs.sendMessage(tabId, message);
+  }
+};
+
 class WebsiteContentManager {
   private currentPageParts: WebsitePart[] = [];
   private featureExtractor: FeatureExtractor;
@@ -93,7 +111,7 @@ class WebsiteContentManager {
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const response = await chrome.tabs.sendMessage(tabId, {
+    const response = await sendMessageWithInjection(tabId, {
       type: ContentTasks.EXTRACT_PAGE_DATA,
     });
 
@@ -269,7 +287,7 @@ export const highlightWebsiteElementTool: WebMCPTool = {
         return "Error: No active tab found";
       }
 
-      await chrome.tabs.sendMessage(tab.id, {
+      await sendMessageWithInjection(tab.id, {
         type: ContentTasks.HIGHLIGHT_ELEMENTS,
         payload: {
           id,

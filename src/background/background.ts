@@ -185,6 +185,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === BackgroundTasks.AGENT_CANCEL) {
+    const agent = getAgent();
+    agent.cancel();
+    sendResponse({ status: ResponseStatus.SUCCESS });
+    return true;
+  }
+
+  if (message.type === BackgroundTasks.TOOL_PERMISSION_RESPOND) {
+    const agent = getAgent();
+    agent.resolvePermission(message.toolCallId, message.decision);
+    sendResponse({ status: ResponseStatus.SUCCESS });
+    return true;
+  }
+
   if (message.type === BackgroundTasks.EXTRACT_FEATURES) {
     featureExtractor
       .extractFeatures([message.text])

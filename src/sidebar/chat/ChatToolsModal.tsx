@@ -1,99 +1,49 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { AvailableTools, ToolName } from "../../shared/tools.ts";
-import { BackgroundTasks, ResponseStatus } from "../../shared/types.ts";
+import {
+  AvailableTools,
+  ToolName,
+  toolMetadata,
+} from "../../shared/tools.ts";
+import { ToolPermissions } from "../../shared/types.ts";
 import { Button, Modal } from "../theme";
 
-interface ChatToolsModalProps {
-  activeTools: ToolName[];
-  onClose: () => void;
-  onSubmit: (tools: ToolName[]) => void;
-}
+const PERMISSIONS_STORAGE_KEY = "toolPermissions";
 
-const toolMetadata: Record<ToolName, { label: string; description: string }> = {
-  [AvailableTools.GET_OPEN_TABS]: {
-    label: "Get Open Tabs",
-    description: "List all currently open browser tabs",
-  },
-  [AvailableTools.GO_TO_TAB]: {
-    label: "Go to Tab",
-    description: "Navigate to a specific tab",
-  },
-  [AvailableTools.OPEN_URL]: {
-    label: "Open URL",
-    description: "Open a new URL in a tab",
-  },
-  [AvailableTools.CLOSE_TAB]: {
-    label: "Close Tab",
-    description: "Close a specific tab",
-  },
-  [AvailableTools.FIND_HISTORY]: {
-    label: "Find History",
-    description: "Search browsing history with semantic search",
-  },
-  [AvailableTools.ASK_WEBSITE]: {
-    label: "Ask Website",
-    description: "Extract and analyze website content",
-  },
-  [AvailableTools.HIGHLIGHT_WEBSITE_ELEMENT]: {
-    label: "Highlight Website Element",
-    description: "Highlight elements on a webpage",
-  },
-};
+export default function ChatToolsModal({ onClose }: { onClose: () => void }) {
+  const [permissions, setPermissions] = useState<ToolPermissions>({});
 
-export default function ChatToolsModal({
-  activeTools,
-  onClose,
-  onSubmit,
-}: ChatToolsModalProps) {
-  const [selectedTools, setSelectedTools] = useState<Set<ToolName>>(
-    new Set(activeTools)
-  );
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  useEffect(() => {
+    chrome.storage.local.get([PERMISSIONS_STORAGE_KEY], (result) => {
+      setPermissions(
+        (result[PERMISSIONS_STORAGE_KEY] as ToolPermissions) || {}
+      );
+    });
+  }, []);
 
-  const handleToggle = (tool: ToolName) => {
-    const newSelected = new Set(selectedTools);
-    if (newSelected.has(tool)) {
-      newSelected.delete(tool);
+  const setAlways = (tool: ToolName, alwaysAllow: boolean) => {
+    const next: ToolPermissions = { ...permissions };
+    if (alwaysAllow) {
+      next[tool] = "always_allow";
     } else {
-      newSelected.add(tool);
+      delete next[tool];
     }
-    setSelectedTools(newSelected);
-  };
-
-  const handleSubmit = () => {
-    setIsSubmitting(true);
-
-    const toolsArray = Array.from(selectedTools);
-
-    // Send AGENT_INITIALIZE with selected tools
-    chrome.runtime.sendMessage(
-      {
-        type: BackgroundTasks.AGENT_INITIALIZE,
-        tools: toolsArray,
-      },
-      (response) => {
-        setIsSubmitting(false);
-        if (response.status === ResponseStatus.SUCCESS) {
-          onSubmit(toolsArray);
-        } else {
-          alert("Failed to initialize agent with selected tools");
-        }
-      }
-    );
+    setPermissions(next);
+    chrome.storage.local.set({ [PERMISSIONS_STORAGE_KEY]: next });
   };
 
   return (
-    <Modal title="Configure Tools" onClose={onClose}>
+    <Modal title="Tool permissions" onClose={onClose}>
       <div className="space-y-4">
         <p className="text-sm text-chrome-text-secondary">
-          Select which tools the agent can use. Changes will reset the current
-          conversation.
+          The agent asks before running a tool. Set "Always allow" to skip the
+          prompt for tools you trust.
         </p>
 
         <div className="space-y-3 overflow-y-auto">
           {Object.values(AvailableTools).map((tool) => {
             const metadata = toolMetadata[tool];
+            const alwaysAllow = permissions[tool] === "always_allow";
             return (
               <div
                 key={tool}
@@ -102,8 +52,8 @@ export default function ChatToolsModal({
                 <input
                   type="checkbox"
                   id={tool}
-                  checked={selectedTools.has(tool)}
-                  onChange={() => handleToggle(tool)}
+                  checked={alwaysAllow}
+                  onChange={(e) => setAlways(tool, e.target.checked)}
                   className="mt-1 h-4 w-4 cursor-pointer rounded border transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none bg-chrome-bg-primary border-chrome-border text-chrome-accent-primary focus:border-chrome-accent-primary focus:ring-chrome-accent-primary focus:ring-offset-chrome-bg-primary"
                 />
                 <label htmlFor={tool} className="flex-1 cursor-pointer">
@@ -112,6 +62,9 @@ export default function ChatToolsModal({
                   </div>
                   <div className="text-xs text-chrome-text-secondary mt-1">
                     {metadata.description}
+                  </div>
+                  <div className="text-xs mt-1 text-chrome-text-secondary">
+                    {alwaysAllow ? "Always allowed" : "Asks each time"}
                   </div>
                 </label>
               </div>
@@ -122,22 +75,11 @@ export default function ChatToolsModal({
         <div className="flex justify-end gap-2 pt-4 border-t border-chrome-border">
           <Button
             type="button"
-            variant="ghost"
-            color="secondary"
-            onClick={onClose}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
             variant="solid"
             color="primary"
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            loading={isSubmitting}
+            onClick={onClose}
           >
-            Apply Changes
+            Done
           </Button>
         </div>
       </div>

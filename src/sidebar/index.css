@@ -58,3 +58,52 @@ body {
   background-color: #202124;
   color: #e8eaed;
 }
+
+.user-message ::selection,
+.user-message::selection {
+  background-color: var(--color-chrome-bg-primary);
+  color: var(--color-chrome-accent-primary);
+}
+
+.message-bubble {
+  border-radius: var(--radius-lg);
+}
+@supports (corner-shape: bevel) {
+  .message-bubble {
+    border-radius: var(--radius-lg);
+    corner-shape: squircle;
+  }
+}
+
+.copy-button {
+  position: absolute;
+  bottom: anchor(bottom);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.copy-button-left {
+  right: calc(anchor(left) + 4px);
+}
+.copy-button-right {
+  left: calc(anchor(right) + 4px);
+}
+.message-row:hover .copy-button,
+.copy-button:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Fallback for browsers without anchor positioning. */
+@supports not (anchor-name: --x) {
+  .message-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+  }
+  .copy-button {
+    position: static;
+  }
+  .copy-button-left {
+    order: -1;
+  }
+}

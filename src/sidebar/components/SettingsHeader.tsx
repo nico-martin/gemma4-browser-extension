@@ -11,7 +11,7 @@ export default function SettingsHeader({
     <header
       className={cn(
         className,
-        "border-b border-chrome-border bg-chrome-bg-primary px-6 py-4"
+        "select-none border-b border-chrome-border bg-chrome-bg-primary px-6 py-4"
       )}
     >
       <div className="flex items-center justify-between">
