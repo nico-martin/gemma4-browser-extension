@@ -85,32 +85,44 @@ export default function ChatToolsModal({
 
   return (
     <Modal title="Configure Tools" onClose={onClose}>
-      <div className="space-y-4">
-        <p className="text-sm text-chrome-text-secondary">
-          Select which tools the agent can use. Changes will reset the current
-          conversation.
-        </p>
+      <div className="flex flex-col h-full max-h-screen w-full mb-10">
+        {/* Header / Description */}
+        <div className="shrink-0 p-4 border-b border-chrome-border">
+          <p className="text-sm text-chrome-text-secondary">
+            Select which tools the agent can use. Changes will reset the current
+            conversation.
+          </p>
+        </div>
 
-        <div className="space-y-3 overflow-y-auto">
+        {/* Scrollable Tools Section */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 scrollbar-thin">
           {Object.values(AvailableTools).map((tool) => {
             const metadata = toolMetadata[tool];
+
             return (
               <div
                 key={tool}
-                className="flex items-start gap-3 rounded-lg border border-chrome-border p-3"
+                className="flex items-start gap-3 rounded-lg border border-chrome-border p-3 
+                     bg-chrome-bg-primary hover:bg-chrome-bg-secondary transition"
               >
                 <input
                   type="checkbox"
                   id={tool}
                   checked={selectedTools.has(tool)}
                   onChange={() => handleToggle(tool)}
-                  className="mt-1 h-4 w-4 cursor-pointer rounded border transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none bg-chrome-bg-primary border-chrome-border text-chrome-accent-primary focus:border-chrome-accent-primary focus:ring-chrome-accent-primary focus:ring-offset-chrome-bg-primary"
+                  className="mt-1 h-4 w-4 cursor-pointer rounded border 
+                       bg-chrome-bg-primary border-chrome-border
+                       text-chrome-accent-primary
+                       focus:ring-2 focus:ring-chrome-accent-primary
+                       focus:ring-offset-2 focus:ring-offset-chrome-bg-primary"
                 />
+
                 <label htmlFor={tool} className="flex-1 cursor-pointer">
                   <div className="text-sm font-medium text-chrome-text-primary">
                     {metadata.label}
                   </div>
-                  <div className="text-xs text-chrome-text-secondary mt-1">
+
+                  <div className="mt-1 text-xs text-chrome-text-secondary">
                     {metadata.description}
                   </div>
                 </label>
@@ -119,26 +131,32 @@ export default function ChatToolsModal({
           })}
         </div>
 
-        <div className="flex justify-end gap-2 pt-4 border-t border-chrome-border">
-          <Button
-            type="button"
-            variant="ghost"
-            color="secondary"
-            onClick={onClose}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="solid"
-            color="primary"
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            loading={isSubmitting}
-          >
-            Apply Changes
-          </Button>
+        {/* Footer Buttons */}
+        <div className="shrink-0 border-t border-chrome-border p-4 bg-chrome-bg-primary">
+          <div className="flex flex-col sm:flex-row justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              color="secondary"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+
+            <Button
+              type="button"
+              variant="solid"
+              color="primary"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              loading={isSubmitting}
+              className="w-full sm:w-auto"
+            >
+              Apply Changes
+            </Button>
+          </div>
         </div>
       </div>
     </Modal>
