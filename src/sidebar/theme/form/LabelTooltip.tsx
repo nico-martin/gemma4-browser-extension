@@ -8,7 +8,7 @@ interface LabelTooltipProps extends Omit<TooltipProps, "children"> {
 }
 
 export default function LabelTooltip({
-  more = null,
+  more: _more = null,
   ...tooltip
 }: LabelTooltipProps) {
   return (

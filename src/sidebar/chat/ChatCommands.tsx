@@ -55,7 +55,7 @@ const ChatCommands = forwardRef<ChatCommandsRef, ChatCommandsProps>(
               prev > 0 ? prev - 1 : filteredCommands.length - 1
             );
             break;
-          case "Enter":
+          case "Enter": {
             e.preventDefault();
             const selected = filteredCommands[selectedIndex];
             if (selected) {
@@ -63,6 +63,7 @@ const ChatCommands = forwardRef<ChatCommandsRef, ChatCommandsProps>(
               onExecute?.(selected);
             }
             break;
+          }
           case "Escape":
             onClose?.();
             break;

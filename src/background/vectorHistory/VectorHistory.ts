@@ -200,7 +200,7 @@ export default class VectorHistory {
 
     return {
       name: "find_history",
-      description: `Search through browsing history using semantic search. Returns entries that are semantically similar to the query, sorted by relevance.
+      description: `Search through browsing history using semantic search. Returns entries that are semantically similar to the query, sorted by relevance. ALWAYS use this tool when a user asks about pages they visited in the past, wants to find a specific website or article they saw before, asks "do you know about...", or requests information from earlier browsing sessions.
 
 Current date and time: ${currentDateTime}
 

@@ -58,7 +58,15 @@ class WebsiteContentManager {
     this.currentTabId = tabId;
     this.currentUrl = url;
 
-    this.loadCurrentPage().catch((error) => {
+    this.loadCurrentPage().catch((error: unknown) => {
+      // A missing content script (e.g. chrome:// pages, the web store, or a tab
+      // that has not finished injecting yet) surfaces as a connection error.
+      // This is an expected condition, not a failure, so do not log it as one.
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Could not establish connection")) {
+        this.currentPageParts = [];
+        return;
+      }
       console.error("Failed to load page content:", error);
     });
   }
@@ -184,7 +192,7 @@ export const createAskWebsiteTool = (
   return {
     name: "ask_website",
     description:
-      "Search and retrieve relevant information from the current webpage. Use this tool whenever a user asks a question where you are not sure if you have the necessary informations to answer.",
+      "Search and retrieve relevant information from the current webpage using semantic similarity. This tool extracts page content and finds the most relevant sections matching the user's query. ALWAYS use this tool when a user asks about the content of the current webpage, wants to know what's on the page, asks for information found on the page, or requests a summary or excerpt from the page.",
     inputSchema: {
       type: "object",
       properties: {

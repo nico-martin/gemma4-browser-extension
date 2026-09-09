@@ -61,19 +61,25 @@ export const getOpenTabsTool: WebMCPTool = {
 export const goToTabTool: WebMCPTool = {
   name: "go_to_tab",
   description:
-    "Navigate to a specific browser tab by its ID and bring it to focus",
+    "Navigate to a specific browser tab by its ID and bring it to focus. The tab ID must be a valid integer.",
   inputSchema: {
     type: "object",
     properties: {
       tabId: {
         type: "number",
-        description: "The ID of the tab to navigate to",
+        description: "The ID of the tab to navigate to (must be a valid tab ID from get_open_tabs)",
       },
     },
     required: ["tabId"],
   },
   execute: async (args) => {
-    const tabId = args.tabId as number;
+    const tabIdRaw = args.tabId;
+    const tabId = typeof tabIdRaw === "string" ? parseInt(tabIdRaw, 10) : (tabIdRaw as number);
+
+    if (!Number.isInteger(tabId)) {
+      return `Error: tabId must be a valid integer. Received: ${tabIdRaw}`;
+    }
+
     try {
       const tab = await chrome.tabs.get(tabId);
       await chrome.windows.update(tab.windowId, { focused: true });
@@ -109,6 +115,15 @@ export const openUrlTool: WebMCPTool = {
     const active = args.active !== undefined ? (args.active as boolean) : true;
 
     try {
+      const parsed = new URL(url);
+      if (!["https:", "http:"].includes(parsed.protocol)) {
+        return `Error: URL scheme "${parsed.protocol}" is not allowed. Only http and https are permitted.`;
+      }
+    } catch {
+      return `Error: Invalid URL: ${url}`;
+    }
+
+    try {
       const tab = await chrome.tabs.create({
         url,
         active,
@@ -129,13 +144,18 @@ export const closeTabTool: WebMCPTool = {
     properties: {
       tabId: {
         type: "number",
-        description: "The ID of the tab to close",
+        description: "The ID of the tab to close (must be a valid tab ID from get_open_tabs)",
       },
     },
     required: ["tabId"],
   },
   execute: async (args) => {
-    const tabId = args.tabId as number;
+    const tabIdRaw = args.tabId;
+    const tabId = typeof tabIdRaw === "string" ? parseInt(tabIdRaw, 10) : (tabIdRaw as number);
+
+    if (!Number.isInteger(tabId)) {
+      return `Error: tabId must be a valid integer. Received: ${tabIdRaw}`;
+    }
 
     try {
       // Get tab info before closing for better feedback
