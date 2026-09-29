@@ -10,47 +10,38 @@ export const getOpenTabsTool: WebMCPTool = {
     required: [],
   },
   execute: async () => {
+    const MAX_TABS = 25; // Limit to avoid blowing up the context window
+    const MAX_TITLE = 60;
+    const MAX_URL = 120;
+
     try {
-      const tabs = await chrome.tabs.query({});
+      const allTabs = await chrome.tabs.query({});
 
-      const tabInfoPromises = tabs.map(async (tab) => {
-        let description = null;
+      // Prioritise: active tabs first, then most recent, capped
+      const sorted = allTabs
+        .sort((a, b) => {
+          if (a.active !== b.active) return a.active ? -1 : 1;
+          return (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0);
+        })
+        .slice(0, MAX_TABS);
 
-        if (tab.id && tab.url?.startsWith("http")) {
-          try {
-            const results = await chrome.scripting.executeScript({
-              target: { tabId: tab.id },
-              func: () => {
-                const metaDescription = document.querySelector(
-                  'meta[name="description"]'
-                );
-                return metaDescription?.getAttribute("content") || null;
-              },
-            });
-            description = results[0]?.result || null;
-          } catch (error) {
-            console.warn("[tool:get_open_tabs] description fetch failed", {
-              tabId: tab.id,
-              url: tab.url,
-              error,
-            });
-            description = null;
-          }
-        }
-
-        return {
-          id: tab.id,
-          title: tab.title,
-          url: tab.url,
-          description,
-          active: tab.active,
-          windowId: tab.windowId,
-          index: tab.index,
-        };
+      const tabInfo = sorted.map((tab) => {
+        const title =
+          tab.title && tab.title.length > MAX_TITLE
+            ? tab.title.slice(0, MAX_TITLE) + "…"
+            : tab.title;
+        const url =
+          tab.url && tab.url.length > MAX_URL
+            ? tab.url.slice(0, MAX_URL) + "…"
+            : tab.url;
+        return { id: tab.id, title, url, active: tab.active };
       });
 
-      const tabInfo = await Promise.all(tabInfoPromises);
-      return JSON.stringify(tabInfo, null, 2);
+      let result = JSON.stringify(tabInfo);
+      if (allTabs.length > MAX_TABS) {
+        result += `\n(Showing ${MAX_TABS} of ${allTabs.length} tabs)`;
+      }
+      return result;
     } catch (error) {
       console.error("[tool:get_open_tabs] failed", error);
       return `Error getting tabs: ${error.toString()}`;

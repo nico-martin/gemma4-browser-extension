@@ -287,15 +287,19 @@ Use ISO 8601 format for time filtering if the request contains a reference to a 
           }
 
           const formattedResults = results.map((result) => ({
-            title: result.title,
-            description: result.description,
-            url: result.url,
+            title:
+              result.title.length > 80
+                ? result.title.slice(0, 80) + "…"
+                : result.title,
+            url:
+              result.url.length > 120
+                ? result.url.slice(0, 120) + "…"
+                : result.url,
             similarity: result.similarity.toFixed(3),
             time: new Date(result.time).toISOString(),
-            //id: result.id,
           }));
 
-          return JSON.stringify(formattedResults, null, 2);
+          return JSON.stringify(formattedResults);
         } catch (error) {
           return `Error searching history: ${error.toString()}`;
         }

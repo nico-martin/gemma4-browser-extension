@@ -2,7 +2,7 @@ import { Hammer } from "lucide-react";
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
-import { ToolName } from "../../shared/tools.ts";
+import { AvailableTools, ToolName } from "../../shared/tools.ts";
 import {
   BackgroundMessages,
   BackgroundTasks,
@@ -49,6 +49,9 @@ export default function Chat() {
     chrome.storage.local.get(["activeTools"], (result) => {
       if (result.activeTools && Array.isArray(result.activeTools)) {
         setActiveTools(result.activeTools as ToolName[]);
+      } else {
+        // Default: all tools enabled on first launch
+        setActiveTools(Object.values(AvailableTools));
       }
       setToolsLoaded(true);
     });
