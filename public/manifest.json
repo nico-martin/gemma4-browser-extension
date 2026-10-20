@@ -3,7 +3,13 @@
   "name": "Transformers.js Gemma 4 Browser Assistant",
   "version": "0.2.1",
   "description": "On-device AI Browser Assistant powered by Transformers.js and Gemma 4 E2B",
-  "permissions": ["sidePanel", "storage", "scripting", "tabs"],
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "scripting",
+    "tabs",
+    "declarativeNetRequestWithHostAccess"
+  ],
   "host_permissions": ["http://*/*", "https://*/*"],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"

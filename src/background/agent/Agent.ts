@@ -14,6 +14,7 @@ import {
 import { extractToolCalls } from "./extractToolCalls.ts";
 import { ToolCallPayload } from "./types.ts";
 import {
+  ToolContext,
   WebMCPTool,
   executeWebMCPTool,
   webMCPToolToChatTemplateTool,
@@ -69,6 +70,8 @@ const getTextGenerationPipeline = async (
 };
 
 class Agent {
+  private conversationController = new AbortController();
+  private sessionId = crypto.randomUUID();
   private pastKeyValues: DynamicCache | null = null;
   private messages: Array<Message> = createInitialMessages();
   private _chatMessages: Array<ChatMessage> = [];
@@ -233,6 +236,12 @@ class Agent {
   };
 
   public runAgent = async (prompt: string): Promise<AgentRunMetrics> => {
+    // Capture this conversation so clear/reinitialize cannot move an old run
+    // into the new conversation's remote-search context.
+    const context: ToolContext = {
+      sessionId: this.sessionId,
+      signal: this.conversationController.signal,
+    };
     let roleForGeneration: "user" | "tool" = "user";
     let appendPromptMessage = true;
     const start = performance.now();
@@ -290,6 +299,7 @@ class Agent {
     };
 
     while (prompt !== null) {
+      context.signal.throwIfAborted();
       const generation = await this.generateText(
         prompt,
         roleForGeneration,
@@ -298,6 +308,7 @@ class Agent {
       );
 
       const finalResponse = generation.text;
+      context.signal.throwIfAborted();
       generatedTokens += generation.metrics.generatedTokens;
       prefillTokens += generation.metrics.prefillTokens;
       prefillMs += generation.metrics.prefillMs;
@@ -322,8 +333,9 @@ class Agent {
         prompt = null;
       } else {
         const toolResponses = await Promise.all(
-          toolCalls.map(this.executeToolCall)
+          toolCalls.map((call) => this.executeToolCall(call, context))
         );
+        context.signal.throwIfAborted();
 
         for (let i = this.messages.length - 1; i >= 0; i -= 1) {
           if (this.messages[i].role === "assistant") {
@@ -404,7 +416,8 @@ class Agent {
   };
 
   private executeToolCall = async (
-    toolCall: ToolCallPayload
+    toolCall: ToolCallPayload,
+    context: ToolContext
   ): Promise<{ id: string; name: string; result: string }> => {
     const toolToUse = this.tools.find((t) => t.name === toolCall.name);
     if (!toolToUse)
@@ -413,11 +426,14 @@ class Agent {
     return {
       id: toolCall.id,
       name: toolCall.name,
-      result: await executeWebMCPTool(toolToUse, toolCall.arguments),
+      result: await executeWebMCPTool(toolToUse, toolCall.arguments, context),
     };
   };
 
   public clear() {
+    this.conversationController.abort();
+    this.conversationController = new AbortController();
+    this.sessionId = crypto.randomUUID();
     this.messages = createInitialMessages();
     void this.pastKeyValues?.dispose();
     this.pastKeyValues = null;

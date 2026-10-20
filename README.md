@@ -4,7 +4,7 @@
 
 An on-device AI assistant that runs entirely in your browser using WebGPU and Transformers.js. This Chrome extension provides an intelligent agent that can understand natural language commands and interact with your browser through a set of specialized tools.
 
-All processing happens locally on your device. No data is sent to external servers, ensuring complete privacy.
+Model inference, website analysis and history embeddings run locally on your device. Remote web search is disabled until you explicitly allow it in Configure Tools. If enabled, the agent can send search queries, fetch URLs and objectives to Parallel; review the privacy details below.
 
 ### What can it do?
 
@@ -31,6 +31,17 @@ The extension uses Retrieval-Augmented Generation to understand and interact wit
 The extension maintains a semantic search-enabled history database:
 
 - **find_history**: Search your browsing history using natural language queries instead of exact keywords. The system stores vector embeddings for page titles, descriptions, and URLs in IndexedDB, enabling semantic search with time-based filtering.
+
+#### Web Search and Source Reading
+
+Open **Configure Tools** (the hammer button), review the remote-search notice, and enable **Allow remote web search**. [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) is the built-in web-search provider, with free anonymous search powered by Fast mode and no account or API key required:
+
+- **web_search**: Search current public information and return source URLs and excerpts directly to the local agent.
+- **web_fetch**: Read a public HTTP(S) source URL, optionally focusing on an objective of up to 200 characters. Use `ask_website` for private or local tab content.
+
+The tools send their queries, objectives or URLs, the configured model identifier and a random conversation ID to `https://search.parallel.ai/mcp`. The extension does not automatically upload the whole conversation or browsing history, but a model-generated query may include information from your conversation or earlier tool results. Only enable remote search for information you are willing to share with Parallel. Model inference stays on-device.
+
+No MCP connection or discovery happens before consent. You can disable either tool independently or revoke remote-search consent in Configure Tools; applying changes resets the conversation and cancels pending remote requests. Existing saved tool selections, including an empty list, are preserved. Clearing the chat starts a new conversation ID; follow-up search and fetch calls keep the same ID. Requests time out after 30 seconds. Service errors and free-tier quotas are returned to the agent without switching to another provider or retrying automatically.
 
 ### Installation
 
@@ -86,7 +97,12 @@ The extension requires these permissions:
 - `storage`: Save settings and model cache
 - `scripting`: Inject content scripts
 - `tabs`: Needed to read the tab URL
+- `declarativeNetRequestWithHostAccess`: Set the extension's User-Agent only on its own requests to the Parallel MCP endpoint; it does not modify ordinary webpage traffic
 - `host_permissions`: Access webpage content on all URLs
+
+### Validation
+
+Run `pnpm test` for deterministic tests of the background message handler, agent tool loop, consent and saved selections, MCP requests and result consumption. These tests use scripted model responses and a local MCP response fixture; they do not download models or evaluate model quality. Run `pnpm run build` to type-check and bundle the extension.
 
 ---
 ## Gemma 4

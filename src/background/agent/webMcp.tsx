@@ -17,6 +17,11 @@ type WebMCPProperty =
       default?: boolean;
     };
 
+export interface ToolContext {
+  sessionId: string;
+  signal: AbortSignal;
+}
+
 export interface WebMCPTool {
   name: string;
   description: string;
@@ -25,7 +30,10 @@ export interface WebMCPTool {
     properties: Record<string, WebMCPProperty>;
     required: Array<string>;
   };
-  execute: (args: Record<string, any>) => Promise<string>;
+  execute: (
+    args: Record<string, any>,
+    context?: ToolContext
+  ) => Promise<string>;
 }
 
 export const webMCPToolToChatTemplateTool = (
@@ -82,7 +90,8 @@ export const validateWebMCPToolArguments = (
 
 export const executeWebMCPTool = async (
   tool: WebMCPTool,
-  args: Record<string, any> | string | undefined
+  args: Record<string, any> | string | undefined,
+  context?: ToolContext
 ) => {
   // Handle case where args is a JSON string instead of an object
   let parsedArgs: Record<string, any> = {};
@@ -98,5 +107,5 @@ export const executeWebMCPTool = async (
   }
 
   const validatedArgs = validateWebMCPToolArguments(tool, parsedArgs);
-  return await tool.execute(validatedArgs);
+  return await tool.execute(validatedArgs, context);
 };
