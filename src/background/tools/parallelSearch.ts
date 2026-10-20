@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
 
 import { MODELS, TEXT_GENERATION_ID } from "../../shared/constants.ts";
 import { ToolContext, WebMCPTool } from "../agent/webMcp.tsx";
@@ -73,10 +74,11 @@ const callParallel = async (
       ),
     TIMEOUT_MS
   );
-  const client = new Client({
-    name: "gemma4-browser-extension",
-    version: "0.2.1",
-  });
+  const client = new Client(
+    { name: "gemma4-browser-extension", version: "0.2.1" },
+    // MV3 forbids eval/new Function. Validate server output without codegen.
+    { jsonSchemaValidator: new CfWorkerJsonSchemaValidator() }
+  );
   try {
     await ensureUserAgent();
     controller.signal.throwIfAborted();

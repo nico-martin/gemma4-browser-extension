@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cfworker/json-schema": "^4.1.1",
     "@huggingface/transformers": "^4.2.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "idb": "^8.0.3",

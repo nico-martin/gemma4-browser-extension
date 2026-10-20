@@ -156,6 +156,11 @@ beforeEach(async () => {
           tools: ["web_search", "web_fetch"].map((name) => ({
             name,
             inputSchema: { type: "object" },
+            outputSchema: {
+              type: "object",
+              properties: { results: { type: "array" } },
+              required: ["results"],
+            },
           })),
         });
       if (body.method === "tools/call") {
@@ -179,6 +184,7 @@ beforeEach(async () => {
             headers: { "Content-Type": "application/json" },
           });
         return json({
+          structuredContent: { results: [] },
           content: [
             {
               type: "text",
@@ -226,6 +232,23 @@ const enable = async (tools?: string[]) =>
   });
 
 describe("Parallel through the background agent caller", () => {
+  it("validates declared output schemas without dynamic code generation", async () => {
+    vi.stubGlobal("Function", function () {
+      throw new EvalError(
+        "Dynamic code generation is forbidden by extension CSP"
+      );
+    });
+    await enable();
+    expect(
+      (await send("AGENT_GENERATE_TEXT", { prompt: "search" })).status
+    ).toBe(0);
+    expect(model.consumed.at(-1).at(-1).content).not.toContain("failed:");
+    expect(calls()).toHaveLength(1);
+    expect(model.consumed.at(-1).at(-1).content).toContain(
+      "Current source content"
+    );
+  });
+
   it("keeps a fresh no-key installation network-inert before informed consent", async () => {
     const r = await send("AGENT_GENERATE_TEXT", { prompt: "search" });
     expect(r.status).toBe(1);
