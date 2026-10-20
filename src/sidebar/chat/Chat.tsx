@@ -2,7 +2,7 @@ import { Hammer } from "lucide-react";
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
-import { ToolName } from "../../shared/tools.ts";
+import { ToolName, resolveActiveTools } from "../../shared/tools.ts";
 import {
   BackgroundMessages,
   BackgroundTasks,
@@ -40,25 +40,54 @@ export default function Chat() {
   const [showCommands, setShowCommands] = useState<boolean>(false);
   const [toolsOpen, setToolsOpen] = useState<boolean>(false);
 
-  const [activeTools, setActiveTools] = useState<ToolName[]>();
+  const [activeTools, setActiveTools] = useState<ToolName[]>(() =>
+    resolveActiveTools()
+  );
+  const [allowRemoteSearch, setAllowRemoteSearch] = useState(false);
   const [toolsLoaded, setToolsLoaded] = useState<boolean>(false);
 
   const inputValue = watch("input");
 
   useEffect(() => {
-    chrome.storage.local.get(["activeTools"], (result) => {
-      if (result.activeTools && Array.isArray(result.activeTools)) {
-        setActiveTools(result.activeTools as ToolName[]);
+    let mounted = true;
+    const loadSettings = async () => {
+      try {
+        const saved = await chrome.storage.local.get([
+          "activeTools",
+          "allowRemoteSearch",
+        ]);
+        if (!mounted) return;
+        const allowed = saved.allowRemoteSearch === true;
+        setActiveTools(
+          resolveActiveTools(
+            Array.isArray(saved.activeTools) ? saved.activeTools : undefined,
+            allowed
+          )
+        );
+        setAllowRemoteSearch(allowed);
+        setToolsLoaded(true);
+      } catch (error) {
+        if (mounted) alert(`Could not load tool settings: ${String(error)}`);
       }
-      setToolsLoaded(true);
-    });
+    };
+    void loadSettings();
+    const onSettingsChanged = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      area: string
+    ) => {
+      if (
+        area === "local" &&
+        ("activeTools" in changes || "allowRemoteSearch" in changes)
+      ) {
+        void loadSettings();
+      }
+    };
+    chrome.storage.onChanged.addListener(onSettingsChanged);
+    return () => {
+      mounted = false;
+      chrome.storage.onChanged.removeListener(onSettingsChanged);
+    };
   }, []);
-
-  useEffect(() => {
-    if (toolsLoaded) {
-      chrome.storage.local.set({ activeTools });
-    }
-  }, [activeTools, toolsLoaded]);
 
   const scrollToBottom = () => {
     if (messagesContainerRef.current) {
@@ -95,24 +124,35 @@ export default function Chat() {
   }, [inputValue]);
 
   useEffect(() => {
+    // The background lazily restores stored permissions and tool choices before
+    // creating an agent, including after a service-worker restart.
     chrome.runtime.sendMessage(
-      {
-        type: BackgroundTasks.AGENT_GET_MESSAGES,
-      },
-      (resp) => {
-        setMessages(resp.messages);
+      { type: BackgroundTasks.AGENT_GET_MESSAGES },
+      (response) => {
+        if (
+          chrome.runtime.lastError ||
+          response?.status !== ResponseStatus.SUCCESS
+        ) {
+          alert(
+            chrome.runtime.lastError?.message ||
+              response?.error ||
+              "Could not load conversation"
+          );
+          return;
+        }
+        setMessages(response.messages ?? []);
       }
     );
-
-    chrome.runtime.sendMessage({
-      type: BackgroundTasks.AGENT_CLEAR,
-    });
-
-    chrome.runtime.onMessage.addListener((message) => {
+    const onMessages = (message: {
+      type: BackgroundMessages;
+      messages: ChatMessage[];
+    }) => {
       if (message.type === BackgroundMessages.MESSAGES_UPDATE) {
         setMessages(message.messages);
       }
-    });
+    };
+    chrome.runtime.onMessage.addListener(onMessages);
+    return () => chrome.runtime.onMessage.removeListener(onMessages);
   }, []);
 
   // Forward keyboard events to ChatCommands
@@ -132,8 +172,15 @@ export default function Chat() {
         prompt: data.input,
       },
       (resp) => {
-        if (resp.status === ResponseStatus.ERROR) {
-          alert(resp.error);
+        if (
+          chrome.runtime.lastError ||
+          resp?.status !== ResponseStatus.SUCCESS
+        ) {
+          alert(
+            chrome.runtime.lastError?.message ||
+              resp?.error ||
+              "Could not generate a response"
+          );
         }
         setIsLoading(false);
       }
@@ -191,9 +238,11 @@ export default function Chat() {
         {toolsOpen && (
           <ChatToolsModal
             activeTools={activeTools}
+            allowRemoteSearch={allowRemoteSearch}
             onClose={() => setToolsOpen(false)}
-            onSubmit={(tools: ToolName[]) => {
+            onSubmit={(tools: ToolName[], allowed: boolean) => {
               setActiveTools(tools);
+              setAllowRemoteSearch(allowed);
               setToolsOpen(false);
             }}
           />
@@ -205,6 +254,7 @@ export default function Chat() {
             variant="solid"
             iconLeft={<Hammer />}
             onClick={() => setToolsOpen(true)}
+            disabled={!toolsLoaded}
           />
           <Controller
             name="input"
@@ -230,7 +280,7 @@ export default function Chat() {
           />
           <Button
             type="submit"
-            disabled={isLoading || showCommands}
+            disabled={isLoading || showCommands || !toolsLoaded}
             color="primary"
             variant="solid"
           >
